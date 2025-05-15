@@ -11,7 +11,7 @@ if(CMAKE_CXX_COMPILER_ID MATCHES "MSVC")
     add_compile_options(/utf-8)
 endif()
 
-add_subdirectory(lib/JUCE)
+add_subdirectory(/Users/BWRS1_dev/krump_vst/lib/JUCE)
 
 juce_add_plugin(NewProject
     PLUGIN_MANUFACTURER_CODE Juce
