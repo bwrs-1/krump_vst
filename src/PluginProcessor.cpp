@@ -1,27 +1,27 @@
 #include "PluginProcessor.h"
 #include "PluginEditor.h"
-#include <juce_audio_plugin_client/juce_audio_plugin_client.h>
-
-#ifndef JucePlugin_Name
-#define JucePlugin_Name "HalfTime"
-#endif
 
 juce::AudioProcessorValueTreeState::ParameterLayout AudioPluginAudioProcessor::createParameterLayout()
 {
     juce::AudioProcessorValueTreeState::ParameterLayout layout;
 
-    // タイム分割の選択肢
     layout.add(std::make_unique<juce::AudioParameterChoice>(
-        "timeDiv",      // パラメーターID
-        "Time",         // パラメーター名
-        juce::StringArray{"1/2", "1/4", "1/8", "1/16"},  // 選択肢
-        0));           // デフォルト値（1/2）
+        "timeDiv",
+        "Time",
+        juce::StringArray{"1/1", "1/2", "1/4", "1/8", "1/16", "1/32", "1/64"},
+        1));
 
     layout.add(std::make_unique<juce::AudioParameterFloat>(
-        "mix",          // パラメーターID
-        "Mix",          // パラメーター名
+        "mix",
+        "Mix",
         juce::NormalisableRange<float>(0.0f, 100.0f, 0.1f),
-        100.0f));      // デフォルト値
+        100.0f));
+
+    layout.add(std::make_unique<juce::AudioParameterFloat>(
+        "pitch",
+        "Pitch",
+        juce::NormalisableRange<float>(-12.0f, 12.0f, 0.1f),
+        0.0f));
 
     return layout;
 }
@@ -32,9 +32,9 @@ AudioPluginAudioProcessor::AudioPluginAudioProcessor()
         .withOutput("Output", juce::AudioChannelSet::stereo(), true)),
       apvts(*this, nullptr, "Parameters", createParameterLayout())
 {
-    // パラメーターの取得と初期化
     timeDivParameter = apvts.getRawParameterValue("timeDiv");
     mixParameter = apvts.getRawParameterValue("mix");
+    pitchParameter = apvts.getRawParameterValue("pitch");
 }
 
 AudioPluginAudioProcessor::~AudioPluginAudioProcessor()
@@ -54,15 +54,25 @@ void AudioPluginAudioProcessor::updateBufferSize(double sampleRate, int samplesP
 {
     const juce::ScopedLock sl(processLock);
     lastSampleRate = static_cast<float>(sampleRate);
-    delayBufferLength = static_cast<int>(4.0 * sampleRate) + samplesPerBlock;
+    delayBufferLength = static_cast<int>(8.0 * sampleRate) + samplesPerBlock;
     delayBuffer.setSize(2, delayBufferLength, false, true, true);
     delayBuffer.clear();
     writePosition = 0;
+
+    // アンチエイリアスフィルターの設定
+    *antiAliasFilter.state = *juce::dsp::IIR::Coefficients<float>::makeLowPass(sampleRate, sampleRate * 0.45f);
 }
 
 void AudioPluginAudioProcessor::prepareToPlay(double sampleRate, int samplesPerBlock)
 {
     updateBufferSize(sampleRate, samplesPerBlock);
+    
+    juce::dsp::ProcessSpec spec;
+    spec.sampleRate = sampleRate;
+    spec.maximumBlockSize = samplesPerBlock;
+    spec.numChannels = 2;
+    
+    antiAliasFilter.prepare(spec);
 }
 
 void AudioPluginAudioProcessor::releaseResources()
@@ -87,8 +97,7 @@ void AudioPluginAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, j
     const int numSamples = buffer.getNumSamples();
     const int numChannels = buffer.getNumChannels();
 
-    // バッファーの範囲チェックと更新
-    if (delayBufferLength < numSamples * 4 || writePosition >= delayBufferLength)
+    if (delayBufferLength < numSamples * 8 || writePosition >= delayBufferLength)
     {
         updateBufferSize(lastSampleRate, numSamples);
     }
@@ -111,68 +120,89 @@ void AudioPluginAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, j
     float timeStretchRatio;
     switch (static_cast<int>(timeDiv))
     {
-        case 0: timeStretchRatio = 2.0f;  break;
-        case 1: timeStretchRatio = 4.0f;  break;
-        case 2: timeStretchRatio = 8.0f;  break;
-        case 3: timeStretchRatio = 16.0f; break;
+        case 0: timeStretchRatio = 1.0f;   break; // 1/1
+        case 1: timeStretchRatio = 2.0f;   break; // 1/2
+        case 2: timeStretchRatio = 4.0f;   break; // 1/4
+        case 3: timeStretchRatio = 8.0f;   break; // 1/8
+        case 4: timeStretchRatio = 16.0f;  break; // 1/16
+        case 5: timeStretchRatio = 32.0f;  break; // 1/32
+        case 6: timeStretchRatio = 64.0f;  break; // 1/64
         default: timeStretchRatio = 2.0f;
     }
 
-    // ミックスの計算
+    // ピッチシフトの計算
+    const float pitchShift = getPitchValue();
+    const float pitchRatio = std::pow(2.0f, pitchShift / 12.0f);
+    timeStretchRatio *= pitchRatio;
+
     const float mixValue = juce::jlimit(0.0f, 100.0f, getMixValue());
     const float wetMix = mixValue * 0.01f;
     const float dryMix = 1.0f - wetMix;
 
-    // 処理
+    juce::AudioBuffer<float> tempBuffer(buffer.getNumChannels(), buffer.getNumSamples());
+    tempBuffer.clear();
+
     for (int channel = 0; channel < numChannels; ++channel)
     {
         float* channelData = buffer.getWritePointer(channel);
+        float* tempData = tempBuffer.getWritePointer(channel);
         const float* delayData = delayBuffer.getReadPointer(channel);
 
         for (int i = 0; i < numSamples; ++i)
         {
             const float originalSample = channelData[i];
             
-            // 読み取り位置の計算を改善
             float readPosition = writePosition + i - numSamples;
             readPosition /= timeStretchRatio;
             
-            // 負の位置の処理を改善
             while (readPosition < 0)
                 readPosition += delayBufferLength;
 
-            // エイリアシングを防ぐための4点エルミート補間
             const int pos0 = static_cast<int>(readPosition - 1 + delayBufferLength) % delayBufferLength;
             const int pos1 = static_cast<int>(readPosition + delayBufferLength) % delayBufferLength;
             const int pos2 = static_cast<int>(readPosition + 1 + delayBufferLength) % delayBufferLength;
             const int pos3 = static_cast<int>(readPosition + 2 + delayBufferLength) % delayBufferLength;
-            
-            const float frac = readPosition - static_cast<float>(static_cast<int>(readPosition));
-            const float frac2 = frac * frac;
-            const float frac3 = frac2 * frac;
 
-            // エルミート補間係数
-            const float c0 = -0.5f * frac3 + 1.0f * frac2 - 0.5f * frac;
-            const float c1 = 1.5f * frac3 - 2.5f * frac2 + 1.0f;
-            const float c2 = -1.5f * frac3 + 2.0f * frac2 + 0.5f * frac;
-            const float c3 = 0.5f * frac3 - 0.5f * frac2;
+            float stretchedSample = hermiteInterpolate(
+                delayData[pos0],
+                delayData[pos1],
+                delayData[pos2],
+                delayData[pos3],
+                readPosition - std::floor(readPosition)
+            );
 
-            // 補間された値を計算
-            float stretchedSample = (delayData[pos0] * c0 +
-                                   delayData[pos1] * c1 +
-                                   delayData[pos2] * c2 +
-                                   delayData[pos3] * c3);
-
-            // ソフトクリッピングでノイズを抑制
-            stretchedSample = std::tanh(stretchedSample);
-
-            // ドライ/ウェットミックス
-            channelData[i] = originalSample * dryMix + stretchedSample * wetMix;
+            tempData[i] = stretchedSample;
         }
     }
 
-    // 書き込み位置の更新
+    // アンチエイリアスフィルターを適用
+    juce::dsp::AudioBlock<float> block(tempBuffer);
+    juce::dsp::ProcessContextReplacing<float> context(block);
+    antiAliasFilter.process(context);
+
+    // ドライ/ウェットミックス
+    for (int channel = 0; channel < numChannels; ++channel)
+    {
+        float* channelData = buffer.getWritePointer(channel);
+        const float* tempData = tempBuffer.getReadPointer(channel);
+
+        for (int i = 0; i < numSamples; ++i)
+        {
+            const float originalSample = channelData[i];
+            channelData[i] = originalSample * dryMix + tempData[i] * wetMix;
+        }
+    }
+
     writePosition = (writePosition + numSamples) % delayBufferLength;
+}
+
+float AudioPluginAudioProcessor::hermiteInterpolate(float y0, float y1, float y2, float y3, float t)
+{
+    float c0 = y1;
+    float c1 = 0.5f * (y2 - y0);
+    float c2 = y0 - 2.5f * y1 + 2.0f * y2 - 0.5f * y3;
+    float c3 = 0.5f * (y3 - y0) + 1.5f * (y1 - y2);
+    return ((c3 * t + c2) * t + c1) * t + c0;
 }
 
 float AudioPluginAudioProcessor::getInterpolatedSample(const float* buffer, float position, int bufferLength)
@@ -184,12 +214,7 @@ float AudioPluginAudioProcessor::getInterpolatedSample(const float* buffer, floa
     pos1 = pos1 % bufferLength;
     if (pos1 < 0) pos1 += bufferLength;
 
-    return linearInterpolate(buffer[pos1], buffer[pos2], frac);
-}
-
-float AudioPluginAudioProcessor::linearInterpolate(float a, float b, float t)
-{
-    return a + (b - a) * t;
+    return buffer[pos1] + frac * (buffer[pos2] - buffer[pos1]);
 }
 
 juce::AudioProcessorEditor* AudioPluginAudioProcessor::createEditor()
@@ -229,12 +254,17 @@ void AudioPluginAudioProcessor::setStateInformation(const void* data, int sizeIn
 
 float AudioPluginAudioProcessor::getTimeDivValue() const noexcept
 {
-    return timeDivParameter != nullptr ? timeDivParameter->load() : 0.0f;
+    return timeDivParameter != nullptr ? timeDivParameter->load() : 1.0f;
 }
 
 float AudioPluginAudioProcessor::getMixValue() const noexcept
 {
     return mixParameter != nullptr ? mixParameter->load() : 100.0f;
+}
+
+float AudioPluginAudioProcessor::getPitchValue() const noexcept
+{
+    return pitchParameter != nullptr ? pitchParameter->load() : 0.0f;
 }
 
 juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()

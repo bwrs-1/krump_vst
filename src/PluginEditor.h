@@ -25,25 +25,6 @@ private:
     juce::Path powerSymbol;
 };
 
-class XYPad : public juce::Component
-{
-public:
-    XYPad();
-    void paint(juce::Graphics& g) override;
-    void mouseDown(const juce::MouseEvent& e) override;
-    void mouseDrag(const juce::MouseEvent& e) override;
-    void mouseUp(const juce::MouseEvent&) override;
-    void setPosition(float x, float y);
-    
-    std::function<void(float, float)> onPositionChanged;
-
-private:
-    void updatePosition(float x, float y);
-    float currentX = 0.5f;
-    float currentY = 0.5f;
-    bool isDragging = false;
-};
-
 class AudioPluginAudioProcessorEditor : public juce::AudioProcessorEditor,
                                       public juce::Timer
 {
@@ -58,25 +39,29 @@ public:
 private:
     AudioPluginAudioProcessor& processorRef;
 
-    // スタイリング用の色定義
     juce::Colour backgroundColour = juce::Colour(40, 40, 40);
-    juce::Colour accentColour = juce::Colour(255, 154, 1);
-    juce::Colour textColour = juce::Colour(200, 200, 200);
+    juce::Colour accentColour = juce::Colour(65, 172, 255);
+    juce::Colour textColour = juce::Colour(229, 229, 229);
 
-    // コントロール
-    XYPad xyPad;
+    TimeButton timeDiv1_1Button;
     TimeButton timeDiv1_2Button;
     TimeButton timeDiv1_4Button;
     TimeButton timeDiv1_8Button;
     TimeButton timeDiv1_16Button;
+    TimeButton timeDiv1_32Button;
+    TimeButton timeDiv1_64Button;
     ModernDial mixKnob;
+    ModernDial pitchKnob;
 
-    // パラメーターアタッチメント
+    std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> timeDiv1_1Attachment;
     std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> timeDiv1_2Attachment;
     std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> timeDiv1_4Attachment;
     std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> timeDiv1_8Attachment;
     std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> timeDiv1_16Attachment;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> timeDiv1_32Attachment;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> timeDiv1_64Attachment;
     std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> mixAttachment;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> pitchAttachment;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (AudioPluginAudioProcessorEditor)
 };
