@@ -11,7 +11,7 @@ if(CMAKE_CXX_COMPILER_ID MATCHES "MSVC")
     add_compile_options(/utf-8)
 endif()
 
-add_subdirectory(/Users/BWRS1_dev/krump_vst/lib/JUCE)
+add_subdirectory(lib/JUCE)
 
 juce_add_plugin(NewProject
     PLUGIN_MANUFACTURER_CODE Juce
@@ -31,18 +31,17 @@ target_compile_definitions(NewProject
         JUCE_USE_CURL=0
         JUCE_VST3_CAN_REPLACE_VST2=0)
 
-juce_add_binary_data(Resources SOURCES
-    Resources/sp404_base.jpg
-    Resources/pad_on.jpg
-    Resources/pad_off.jpg
-    Resources/knob.jpg
-)
+# juce_add_binary_data(Resources SOURCES
+#     Resources/sp404_base.jpg
+#     Resources/pad_on.jpg
+#     Resources/pad_off.jpg
+#     Resources/knob.jpg
+# )
 
 target_link_libraries(NewProject
     PRIVATE
         juce::juce_audio_utils
         juce::juce_dsp
-        Resources
     PUBLIC
         juce::juce_recommended_config_flags
         juce::juce_recommended_lto_flags
