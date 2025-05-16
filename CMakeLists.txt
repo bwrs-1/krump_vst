@@ -23,7 +23,8 @@ juce_add_plugin(NewProject
 target_sources(NewProject
     PRIVATE
         src/PluginEditor.cpp
-        src/PluginProcessor.cpp)
+        src/PluginProcessor.cpp
+        src/MainComponent.cpp)
 
 target_compile_definitions(NewProject
     PUBLIC
