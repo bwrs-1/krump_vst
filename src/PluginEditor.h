@@ -14,6 +14,17 @@ private:
     juce::String label;
 };
 
+class TimeButton : public juce::TextButton
+{
+public:
+    TimeButton(const juce::String& buttonText);
+    void paint(juce::Graphics& g) override;
+    void resized() override;
+
+private:
+    juce::Path powerSymbol;
+};
+
 class XYPad : public juce::Component
 {
 public:
@@ -21,24 +32,20 @@ public:
     void paint(juce::Graphics& g) override;
     void mouseDown(const juce::MouseEvent& e) override;
     void mouseDrag(const juce::MouseEvent& e) override;
-    void mouseUp(const juce::MouseEvent& e) override;
-
+    void mouseUp(const juce::MouseEvent&) override;
+    void setPosition(float x, float y);
+    
     std::function<void(float, float)> onPositionChanged;
 
-    void setPosition(float newX, float newY);
-    float getXValue() const { return currentX; }
-    float getYValue() const { return currentY; }
-
 private:
+    void updatePosition(float x, float y);
     float currentX = 0.5f;
     float currentY = 0.5f;
     bool isDragging = false;
-
-    void updatePosition(float x, float y);
 };
 
-class AudioPluginAudioProcessorEditor final : public juce::AudioProcessorEditor,
-                                            public juce::Timer
+class AudioPluginAudioProcessorEditor : public juce::AudioProcessorEditor,
+                                      public juce::Timer
 {
 public:
     explicit AudioPluginAudioProcessorEditor(AudioPluginAudioProcessor&);
@@ -52,25 +59,24 @@ private:
     AudioPluginAudioProcessor& processorRef;
 
     // スタイリング用の色定義
-    juce::Colour backgroundColour = juce::Colour(20, 22, 23);
-    juce::Colour accentColour = juce::Colour(65, 172, 255);
-    juce::Colour secondaryColour = juce::Colour(41, 43, 44);
-    juce::Colour textColour = juce::Colour(229, 229, 229);
+    juce::Colour backgroundColour = juce::Colour(40, 40, 40);
+    juce::Colour accentColour = juce::Colour(255, 154, 1);
+    juce::Colour textColour = juce::Colour(200, 200, 200);
 
-    // XYパッド
+    // コントロール
     XYPad xyPad;
+    TimeButton timeDiv1_2Button;
+    TimeButton timeDiv1_4Button;
+    TimeButton timeDiv1_8Button;
+    TimeButton timeDiv1_16Button;
+    ModernDial mixKnob;
 
-    // リバーブコントロール
-    ModernDial reverbSizeKnob;
-    ModernDial reverbDampingKnob;
-    ModernDial reverbWidthKnob;
-    ModernDial reverbMixKnob;
-
-    // パラメーター接続
-    std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> reverbSizeAttachment;
-    std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> reverbDampingAttachment;
-    std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> reverbWidthAttachment;
-    std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> reverbMixAttachment;
+    // パラメーターアタッチメント
+    std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> timeDiv1_2Attachment;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> timeDiv1_4Attachment;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> timeDiv1_8Attachment;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> timeDiv1_16Attachment;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> mixAttachment;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (AudioPluginAudioProcessorEditor)
 };

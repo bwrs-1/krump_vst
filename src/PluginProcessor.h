@@ -49,6 +49,8 @@ public:
 
 private:
     // パラメーター
+    std::atomic<float>* timeDivParameter = nullptr;
+    std::atomic<float>* mixParameter = nullptr;
     juce::AudioParameterFloat* grainSize;     // グレインサイズ（10-500ms）
     juce::AudioParameterFloat* grainSpread;   // グレインの拡散（0-100%）
     juce::AudioParameterFloat* grainPitch;    // ピッチシフト（-12 to +12半音）
@@ -58,7 +60,9 @@ private:
     juce::AudioParameterFloat* reverbMix;     // リバーブのミックス（0-1）
 
     // オーディオ処理用のバッファ
-    juce::AudioBuffer<float> grainBuffer;
+    juce::AudioBuffer<float> delayBuffer;
+    int delayBufferLength = 0;
+    int writePosition = 0;
     float lastSampleRate = 44100.0f;
 
     // グレイン処理用
@@ -76,12 +80,28 @@ private:
     juce::dsp::Reverb reverb;
     juce::dsp::Reverb::Parameters reverbParams;
 
+    // フィルター
+    juce::dsp::ProcessorDuplicator<juce::dsp::IIR::Filter<float>, 
+                                  juce::dsp::IIR::Coefficients<float>> lowpassFilter;
+
+    // スレッドセーフなパラメーター更新
+    juce::CriticalSection processLock;
+
     // パラメーターツリーの初期化
     juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout();
 
+    // 安全なパラメーター取得
+    float getTimeDivValue() const noexcept;
+    float getMixValue() const noexcept;
+
+    // バッファー管理
+    void updateBufferSize(double sampleRate, int samplesPerBlock);
+    void clearBuffers();
+
     // グレイン生成関数
     void triggerGrain();
-    float getInterpolatedSample(const float* buffer, float position);
+    float getInterpolatedSample(const float* buffer, float position, int bufferLength);
+    float linearInterpolate(float a, float b, float t);
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (AudioPluginAudioProcessor)
 };

@@ -3,61 +3,25 @@
 #include <juce_audio_plugin_client/juce_audio_plugin_client.h>
 
 #ifndef JucePlugin_Name
-#define JucePlugin_Name "Grain Reverb"
+#define JucePlugin_Name "HalfTime"
 #endif
 
 juce::AudioProcessorValueTreeState::ParameterLayout AudioPluginAudioProcessor::createParameterLayout()
 {
     juce::AudioProcessorValueTreeState::ParameterLayout layout;
 
-    layout.add(std::make_unique<juce::AudioParameterFloat>(
-        "grainSize",     // パラメーターID
-        "Grain Size",    // パラメーター名
-        10.0f,          // 最小値（10ms）
-        500.0f,         // 最大値（500ms）
-        100.0f));       // デフォルト値
+    // タイム分割の選択肢
+    layout.add(std::make_unique<juce::AudioParameterChoice>(
+        "timeDiv",      // パラメーターID
+        "Time",         // パラメーター名
+        juce::StringArray{"1/2", "1/4", "1/8", "1/16"},  // 選択肢
+        0));           // デフォルト値（1/2）
 
     layout.add(std::make_unique<juce::AudioParameterFloat>(
-        "grainSpread",   // パラメーターID
-        "Spread",        // パラメーター名
-        0.0f,           // 最小値（0%）
-        100.0f,         // 最大値（100%）
-        50.0f));        // デフォルト値
-
-    layout.add(std::make_unique<juce::AudioParameterFloat>(
-        "grainPitch",    // パラメーターID
-        "Pitch",         // パラメーター名
-        -12.0f,         // 最小値（-12半音）
-        12.0f,          // 最大値（+12半音）
-        0.0f));         // デフォルト値
-
-    layout.add(std::make_unique<juce::AudioParameterFloat>(
-        "reverbSize",    // パラメーターID
-        "Reverb Size",   // パラメーター名
-        0.0f,           // 最小値
-        1.0f,           // 最大値
-        0.5f));         // デフォルト値
-
-    layout.add(std::make_unique<juce::AudioParameterFloat>(
-        "reverbDamping", // パラメーターID
-        "Damping",       // パラメーター名
-        0.0f,           // 最小値
-        1.0f,           // 最大値
-        0.5f));         // デフォルト値
-
-    layout.add(std::make_unique<juce::AudioParameterFloat>(
-        "reverbWidth",   // パラメーターID
-        "Width",         // パラメーター名
-        0.0f,           // 最小値
-        1.0f,           // 最大値
-        1.0f));         // デフォルト値
-
-    layout.add(std::make_unique<juce::AudioParameterFloat>(
-        "reverbMix",     // パラメーターID
-        "Mix",           // パラメーター名
-        0.0f,           // 最小値
-        1.0f,           // 最大値
-        0.3f));         // デフォルト値
+        "mix",          // パラメーターID
+        "Mix",          // パラメーター名
+        juce::NormalisableRange<float>(0.0f, 100.0f, 0.1f),
+        100.0f));      // デフォルト値
 
     return layout;
 }
@@ -68,46 +32,42 @@ AudioPluginAudioProcessor::AudioPluginAudioProcessor()
         .withOutput("Output", juce::AudioChannelSet::stereo(), true)),
       apvts(*this, nullptr, "Parameters", createParameterLayout())
 {
-    // パラメーターの取得
-    grainSize = dynamic_cast<juce::AudioParameterFloat*>(apvts.getParameter("grainSize"));
-    grainSpread = dynamic_cast<juce::AudioParameterFloat*>(apvts.getParameter("grainSpread"));
-    grainPitch = dynamic_cast<juce::AudioParameterFloat*>(apvts.getParameter("grainPitch"));
-    reverbSize = dynamic_cast<juce::AudioParameterFloat*>(apvts.getParameter("reverbSize"));
-    reverbDamping = dynamic_cast<juce::AudioParameterFloat*>(apvts.getParameter("reverbDamping"));
-    reverbWidth = dynamic_cast<juce::AudioParameterFloat*>(apvts.getParameter("reverbWidth"));
-    reverbMix = dynamic_cast<juce::AudioParameterFloat*>(apvts.getParameter("reverbMix"));
+    // パラメーターの取得と初期化
+    timeDivParameter = apvts.getRawParameterValue("timeDiv");
+    mixParameter = apvts.getRawParameterValue("mix");
 }
 
 AudioPluginAudioProcessor::~AudioPluginAudioProcessor()
 {
-    releaseResources();
+    clearBuffers();
+}
+
+void AudioPluginAudioProcessor::clearBuffers()
+{
+    const juce::ScopedLock sl(processLock);
+    delayBuffer.clear();
+    delayBufferLength = 0;
+    writePosition = 0;
+}
+
+void AudioPluginAudioProcessor::updateBufferSize(double sampleRate, int samplesPerBlock)
+{
+    const juce::ScopedLock sl(processLock);
+    lastSampleRate = static_cast<float>(sampleRate);
+    delayBufferLength = static_cast<int>(4.0 * sampleRate) + samplesPerBlock;
+    delayBuffer.setSize(2, delayBufferLength, false, true, true);
+    delayBuffer.clear();
+    writePosition = 0;
 }
 
 void AudioPluginAudioProcessor::prepareToPlay(double sampleRate, int samplesPerBlock)
 {
-    lastSampleRate = static_cast<float>(sampleRate);
-    
-    // グレインバッファの初期化
-    grainBuffer.setSize(2, static_cast<int>(0.5f * sampleRate), false, true, true); // 最大500msのグレイン
-    grainBuffer.clear();
-    
-    // グレイン処理の初期化
-    activeGrains.clear();
-    activeGrains.reserve(32); // 最大同時グレイン数を予約
-
-    // リバーブの初期化
-    reverbParams.roomSize = *reverbSize;
-    reverbParams.damping = *reverbDamping;
-    reverbParams.width = *reverbWidth;
-    reverbParams.wetLevel = *reverbMix;
-    reverbParams.dryLevel = 1.0f - *reverbMix;
-    reverb.setParameters(reverbParams);
+    updateBufferSize(sampleRate, samplesPerBlock);
 }
 
 void AudioPluginAudioProcessor::releaseResources()
 {
-    grainBuffer.setSize(0, 0);
-    activeGrains.clear();
+    clearBuffers();
 }
 
 bool AudioPluginAudioProcessor::isBusesLayoutSupported(const BusesLayout& layouts) const
@@ -121,112 +81,115 @@ bool AudioPluginAudioProcessor::isBusesLayoutSupported(const BusesLayout& layout
 
 void AudioPluginAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::MidiBuffer&)
 {
+    const juce::ScopedLock sl(processLock);
     juce::ScopedNoDenormals noDenormals;
+
     const int numSamples = buffer.getNumSamples();
-    const float* inputL = buffer.getReadPointer(0);
-    const float* inputR = buffer.getReadPointer(1);
-    float* outputL = buffer.getWritePointer(0);
-    float* outputR = buffer.getWritePointer(1);
+    const int numChannels = buffer.getNumChannels();
 
-    // バッファをクリア
-    buffer.clear();
-
-    // グレイン処理
-    for (int i = 0; i < numSamples; ++i)
+    // バッファーの範囲チェックと更新
+    if (delayBufferLength < numSamples * 4 || writePosition >= delayBufferLength)
     {
-        float outL = 0.0f;
-        float outR = 0.0f;
-
-        // アクティブなグレインの処理
-        for (auto& grain : activeGrains)
-        {
-            if (grain.active)
-            {
-                float pos = grain.startPosition + (i * std::pow(2.0f, grain.pitch / 12.0f));
-                if (pos < grain.startPosition + grain.length && pos >= 0)
-                {
-                    float sampleL = inputL[i];
-                    float sampleR = inputR[i];
-                    
-                    // パンニング適用
-                    outL += sampleL * (1.0f - grain.pan);
-                    outR += sampleR * grain.pan;
-                }
-                else
-                {
-                    grain.active = false;
-                }
-            }
-        }
-
-        // 新しいグレインのトリガー
-        if (random.nextFloat() < 0.1f) // グレインの密度調整
-        {
-            triggerGrain();
-        }
-
-        // 出力にミックス（クリッピング防止のためのゲイン調整）
-        const float gain = 0.5f;
-        outputL[i] = outL * gain;
-        outputR[i] = outR * gain;
+        updateBufferSize(lastSampleRate, numSamples);
     }
 
-    // リバーブパラメーターの更新
-    reverbParams.roomSize = *reverbSize;
-    reverbParams.damping = *reverbDamping;
-    reverbParams.width = *reverbWidth;
-    reverbParams.wetLevel = *reverbMix;
-    reverbParams.dryLevel = 1.0f - *reverbMix;
-    reverb.setParameters(reverbParams);
+    // 入力をディレイバッファにコピー
+    for (int channel = 0; channel < numChannels; ++channel)
+    {
+        const float* inputData = buffer.getReadPointer(channel);
+        float* delayData = delayBuffer.getWritePointer(channel);
+        
+        for (int i = 0; i < numSamples; ++i)
+        {
+            const int pos = (writePosition + i) % delayBufferLength;
+            delayData[pos] = inputData[i];
+        }
+    }
 
-    // リバーブ処理
-    juce::dsp::AudioBlock<float> block(buffer);
-    juce::dsp::ProcessContextReplacing<float> context(block);
-    reverb.process(context);
+    // タイムストレッチのレート計算
+    const float timeDiv = getTimeDivValue();
+    float timeStretchRatio;
+    switch (static_cast<int>(timeDiv))
+    {
+        case 0: timeStretchRatio = 2.0f;  break;
+        case 1: timeStretchRatio = 4.0f;  break;
+        case 2: timeStretchRatio = 8.0f;  break;
+        case 3: timeStretchRatio = 16.0f; break;
+        default: timeStretchRatio = 2.0f;
+    }
+
+    // ミックスの計算
+    const float mixValue = juce::jlimit(0.0f, 100.0f, getMixValue());
+    const float wetMix = mixValue * 0.01f;
+    const float dryMix = 1.0f - wetMix;
+
+    // 処理
+    for (int channel = 0; channel < numChannels; ++channel)
+    {
+        float* channelData = buffer.getWritePointer(channel);
+        const float* delayData = delayBuffer.getReadPointer(channel);
+
+        for (int i = 0; i < numSamples; ++i)
+        {
+            const float originalSample = channelData[i];
+            
+            // 読み取り位置の計算を改善
+            float readPosition = writePosition + i - numSamples;
+            readPosition /= timeStretchRatio;
+            
+            // 負の位置の処理を改善
+            while (readPosition < 0)
+                readPosition += delayBufferLength;
+
+            // エイリアシングを防ぐための4点エルミート補間
+            const int pos0 = static_cast<int>(readPosition - 1 + delayBufferLength) % delayBufferLength;
+            const int pos1 = static_cast<int>(readPosition + delayBufferLength) % delayBufferLength;
+            const int pos2 = static_cast<int>(readPosition + 1 + delayBufferLength) % delayBufferLength;
+            const int pos3 = static_cast<int>(readPosition + 2 + delayBufferLength) % delayBufferLength;
+            
+            const float frac = readPosition - static_cast<float>(static_cast<int>(readPosition));
+            const float frac2 = frac * frac;
+            const float frac3 = frac2 * frac;
+
+            // エルミート補間係数
+            const float c0 = -0.5f * frac3 + 1.0f * frac2 - 0.5f * frac;
+            const float c1 = 1.5f * frac3 - 2.5f * frac2 + 1.0f;
+            const float c2 = -1.5f * frac3 + 2.0f * frac2 + 0.5f * frac;
+            const float c3 = 0.5f * frac3 - 0.5f * frac2;
+
+            // 補間された値を計算
+            float stretchedSample = (delayData[pos0] * c0 +
+                                   delayData[pos1] * c1 +
+                                   delayData[pos2] * c2 +
+                                   delayData[pos3] * c3);
+
+            // ソフトクリッピングでノイズを抑制
+            stretchedSample = std::tanh(stretchedSample);
+
+            // ドライ/ウェットミックス
+            channelData[i] = originalSample * dryMix + stretchedSample * wetMix;
+        }
+    }
+
+    // 書き込み位置の更新
+    writePosition = (writePosition + numSamples) % delayBufferLength;
 }
 
-void AudioPluginAudioProcessor::triggerGrain()
-{
-    const float grainSizeMs = *grainSize;
-    const float spreadAmount = *grainSpread / 100.0f;
-    const float pitchShift = *grainPitch;
-
-    Grain newGrain;
-    newGrain.startPosition = 0;
-    newGrain.length = static_cast<int>((grainSizeMs / 1000.0f) * lastSampleRate);
-    newGrain.pitch = pitchShift + (random.nextFloat() * 2.0f - 1.0f) * spreadAmount;
-    newGrain.pan = random.nextFloat();
-    newGrain.active = true;
-
-    // アクティブでないグレインを探して置き換え
-    bool grainAdded = false;
-    for (auto& grain : activeGrains)
-    {
-        if (!grain.active)
-        {
-            grain = newGrain;
-            grainAdded = true;
-            break;
-        }
-    }
-
-    // アクティブでないグレインが見つからなければ新しく追加
-    if (!grainAdded && activeGrains.size() < 32)
-    {
-        activeGrains.push_back(newGrain);
-    }
-}
-
-float AudioPluginAudioProcessor::getInterpolatedSample(const float* buffer, float position)
+float AudioPluginAudioProcessor::getInterpolatedSample(const float* buffer, float position, int bufferLength)
 {
     int pos1 = static_cast<int>(position);
-    int pos2 = pos1 + 1;
+    int pos2 = (pos1 + 1) % bufferLength;
     float frac = position - pos1;
 
-    float sample1 = buffer[pos1];
-    float sample2 = buffer[pos2];
+    pos1 = pos1 % bufferLength;
+    if (pos1 < 0) pos1 += bufferLength;
 
-    return sample1 + frac * (sample2 - sample1);
+    return linearInterpolate(buffer[pos1], buffer[pos2], frac);
+}
+
+float AudioPluginAudioProcessor::linearInterpolate(float a, float b, float t)
+{
+    return a + (b - a) * t;
 }
 
 juce::AudioProcessorEditor* AudioPluginAudioProcessor::createEditor()
@@ -236,7 +199,7 @@ juce::AudioProcessorEditor* AudioPluginAudioProcessor::createEditor()
 
 const juce::String AudioPluginAudioProcessor::getName() const
 {
-    return "Grain Loop";
+    return JucePlugin_Name;
 }
 
 bool AudioPluginAudioProcessor::acceptsMidi() const { return false; }
@@ -262,6 +225,16 @@ void AudioPluginAudioProcessor::setStateInformation(const void* data, int sizeIn
     if (xmlState.get() != nullptr)
         if (xmlState->hasTagName(apvts.state.getType()))
             apvts.replaceState(juce::ValueTree::fromXml(*xmlState));
+}
+
+float AudioPluginAudioProcessor::getTimeDivValue() const noexcept
+{
+    return timeDivParameter != nullptr ? timeDivParameter->load() : 0.0f;
+}
+
+float AudioPluginAudioProcessor::getMixValue() const noexcept
+{
+    return mixParameter != nullptr ? mixParameter->load() : 100.0f;
 }
 
 juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
