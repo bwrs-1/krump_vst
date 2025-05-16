@@ -1,5 +1,10 @@
 #include "PluginProcessor.h"
 #include "PluginEditor.h"
+#include "audio/effects/ReverbEffect.h"
+#include "audio/effects/DelayEffect.h"
+#include "audio/effects/FilterEffect.h"
+#include "audio/effects/PitchEffect.h"
+#include "audio/effects/SaturationEffect.h"
 
 juce::AudioProcessorValueTreeState::ParameterLayout AudioPluginAudioProcessor::createParameterLayout()
 {
@@ -32,6 +37,13 @@ AudioPluginAudioProcessor::AudioPluginAudioProcessor()
         .withOutput("Output", juce::AudioChannelSet::stereo(), true)),
       apvts(*this, nullptr, "Parameters", createParameterLayout())
 {
+    // エフェクトチェーンの初期化
+    effectChain.addEffect(std::make_unique<ReverbEffect>());
+    effectChain.addEffect(std::make_unique<DelayEffect>());
+    effectChain.addEffect(std::make_unique<FilterEffect>());
+    effectChain.addEffect(std::make_unique<PitchEffect>());
+    effectChain.addEffect(std::make_unique<SaturationEffect>());
+
     timeDivParameter = apvts.getRawParameterValue("timeDiv");
     mixParameter = apvts.getRawParameterValue("mix");
     pitchParameter = apvts.getRawParameterValue("pitch");
@@ -67,25 +79,25 @@ void AudioPluginAudioProcessor::prepareToPlay(double sampleRate, int samplesPerB
 {
     juce::dsp::ProcessSpec spec;
     spec.sampleRate = sampleRate;
-    spec.maximumBlockSize = static_cast<juce::uint32>(samplesPerBlock);
-    spec.numChannels = static_cast<juce::uint32>(getTotalNumOutputChannels());
+    spec.maximumBlockSize = samplesPerBlock;
+    spec.numChannels = getTotalNumOutputChannels();
 
     effectChain.prepare(spec);
+    antiAliasFilter.prepare(spec);
     updateBufferSize(sampleRate, samplesPerBlock);
 }
 
-void AudioPluginAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer,
-                                           juce::MidiBuffer&)
+void AudioPluginAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::MidiBuffer& midiMessages)
 {
     juce::ScopedNoDenormals noDenormals;
-    auto totalNumInputChannels = getTotalNumInputChannels();
-    auto totalNumOutputChannels = getTotalNumOutputChannels();
-
-    for (auto i = totalNumInputChannels; i < totalNumOutputChannels; ++i)
-        buffer.clear(i, 0, buffer.getNumSamples());
 
     // エフェクトチェーンの処理
     effectChain.process(buffer);
+
+    // アンチエイリアスフィルターの処理
+    juce::dsp::AudioBlock<float> block(buffer);
+    juce::dsp::ProcessContextReplacing<float> context(block);
+    antiAliasFilter.process(context);
 }
 
 void AudioPluginAudioProcessor::releaseResources()
