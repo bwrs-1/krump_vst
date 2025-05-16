@@ -8,8 +8,27 @@ void SP404Pad::paintButton(juce::Graphics& g, bool shouldDrawButtonAsHighlighted
     auto cornerSize = 10.0f;
     
     // パッドの基本的な形状
-    g.setColour(shouldDrawButtonAsDown ? juce::Colour(255, 159, 0) 
-                                     : juce::Colour(60, 60, 60));
+    auto baseColour = shouldDrawButtonAsDown ? juce::Colour(255, 159, 0) 
+                                           : juce::Colour(60, 60, 60);
+    
+    // アニメーション効果の適用
+    if (isAnimating)
+    {
+        float alpha = 1.0f - animationProgress;
+        auto rippleColour = juce::Colour(255, 159, 0).withAlpha(alpha * 0.5f);
+        float rippleSize = animationProgress * 20.0f;
+        auto rippleBounds = bounds.expanded(rippleSize);
+        g.setColour(rippleColour);
+        g.fillRoundedRectangle(rippleBounds, cornerSize);
+    }
+
+    // タッチ感度に基づく色の調整
+    if (pressureValue > 0.0f)
+    {
+        baseColour = baseColour.interpolatedWith(juce::Colours::red, pressureValue);
+    }
+    
+    g.setColour(baseColour);
     g.fillRoundedRectangle(bounds, cornerSize);
 
     // 光沢効果
@@ -27,7 +46,8 @@ void SP404Pad::paintButton(juce::Graphics& g, bool shouldDrawButtonAsHighlighted
     // エッジライト効果
     if (shouldDrawButtonAsHighlighted)
     {
-        g.setColour(juce::Colours::white.withAlpha(0.2f));
+        auto edgeColour = juce::Colours::white.withAlpha(0.2f + velocityValue * 0.3f);
+        g.setColour(edgeColour);
         g.drawRoundedRectangle(bounds, cornerSize, 2.0f);
     }
 
@@ -36,6 +56,14 @@ void SP404Pad::paintButton(juce::Graphics& g, bool shouldDrawButtonAsHighlighted
                                      : juce::Colours::white);
     g.setFont(16.0f);
     g.drawText(getName(), bounds, juce::Justification::centred);
+
+    // ベロシティインジケーター
+    if (velocityValue > 0.0f)
+    {
+        auto indicatorBounds = bounds.removeFromBottom(4.0f);
+        g.setColour(juce::Colour(0, 172, 255).withAlpha(velocityValue));
+        g.fillRect(indicatorBounds);
+    }
 }
 
 // SP404Knob implementation
@@ -314,10 +342,10 @@ void MainComponent::buttonClicked(juce::Button* button)
 void MainComponent::sliderValueChanged(juce::Slider* slider)
 {
     // Time Stretchパラメータの更新
-    if (slider == controlKnobs[0].get())
+    /*if (slider == controlKnobs[0].get())
     {
         applyTimeStretchEffect(static_cast<float>(slider->getValue() / 100.0));
-    }
+    }*/
     
     updateLCDDisplay();
 }
@@ -336,10 +364,10 @@ void MainComponent::updateLCDDisplay()
 
 void MainComponent::applyTimeStretchEffect(float amount)
 {
-    // Time Stretchエフェクトの適用
+    /*// Time Stretchエフェクトの適用
     // ここでaudioProcessorのパラメータを更新
     if (auto* timeParam = audioProcessor.apvts.getParameter("timeDiv"))
     {
         timeParam->setValueNotifyingHost(amount);
-    }
+    }*/
 } 

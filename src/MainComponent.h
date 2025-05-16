@@ -6,19 +6,61 @@
 #include "PluginProcessor.h"
 
 // カスタムパッドボタンクラス
-class SP404Pad : public juce::Button
+class SP404Pad : public juce::Button,
+                 public juce::Timer
 {
 public:
     SP404Pad(const juce::String& name) : juce::Button(name) 
     {
         setClickingTogglesState(true);
+        startTimerHz(60); // 60FPSでアニメーション更新
     }
 
     void paintButton(juce::Graphics& g, bool shouldDrawButtonAsHighlighted,
                     bool shouldDrawButtonAsDown) override;
 
+    void mouseDown(const juce::MouseEvent& event) override
+    {
+        pressureValue = 1.0f;
+        velocityValue = 1.0f;
+        Button::mouseDown(event);
+        triggerAnimation();
+    }
+
+    void mouseUp(const juce::MouseEvent& event) override
+    {
+        pressureValue = 0.0f;
+        velocityValue = 0.0f;
+        Button::mouseUp(event);
+    }
+
+    void timerCallback() override
+    {
+        if (isAnimating)
+        {
+            animationProgress += 0.1f;
+            if (animationProgress >= 1.0f)
+            {
+                isAnimating = false;
+                animationProgress = 0.0f;
+            }
+            repaint();
+        }
+    }
+
 private:
     juce::Path padShape;
+    float pressureValue = 0.0f;
+    float velocityValue = 0.0f;
+    bool isAnimating = false;
+    float animationProgress = 0.0f;
+
+    void triggerAnimation()
+    {
+        isAnimating = true;
+        animationProgress = 0.0f;
+    }
+
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(SP404Pad)
 };
 

@@ -1,6 +1,6 @@
-cmake_minimum_required(VERSION 3.22)
+cmake_minimum_required(VERSION 3.15)
 
-project(krump_vst VERSION 0.0.1)
+project(KrumpVST VERSION 0.0.1)
 
 enable_language(CXX)
 set(CMAKE_CXX_STANDARD 17)
@@ -13,20 +13,28 @@ endif()
 
 add_subdirectory(lib/JUCE)
 
-juce_add_plugin(NewProject
-    PLUGIN_MANUFACTURER_CODE Juce
-    PLUGIN_CODE Dem0
-
+juce_add_plugin(KrumpVST
+    VERSION 0.0.1
+    COMPANY_NAME "BWRS1"
+    IS_SYNTH FALSE
+    NEEDS_MIDI_INPUT FALSE
+    NEEDS_MIDI_OUTPUT FALSE
+    IS_MIDI_EFFECT FALSE
+    EDITOR_WANTS_KEYBOARD_FOCUS FALSE
+    COPY_PLUGIN_AFTER_BUILD TRUE
+    PLUGIN_MANUFACTURER_CODE BWRS
+    PLUGIN_CODE Krum
     FORMATS AU VST3 Standalone
-    PRODUCT_NAME "KRUMP_VST")
+    PRODUCT_NAME "KrumpVST")
 
-target_sources(NewProject
+target_sources(KrumpVST
     PRIVATE
-        src/PluginEditor.cpp
         src/PluginProcessor.cpp
-        src/MainComponent.cpp)
+        src/PluginEditor.cpp
+        src/MainComponent.cpp
+        src/EffectChain.cpp)
 
-target_compile_definitions(NewProject
+target_compile_definitions(KrumpVST
     PUBLIC
         JUCE_WEB_BROWSER=0
         JUCE_USE_CURL=0
@@ -39,7 +47,7 @@ target_compile_definitions(NewProject
 #     Resources/knob.jpg
 # )
 
-target_link_libraries(NewProject
+target_link_libraries(KrumpVST
     PRIVATE
         juce::juce_audio_utils
         juce::juce_dsp

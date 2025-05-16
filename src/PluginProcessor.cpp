@@ -65,19 +65,32 @@ void AudioPluginAudioProcessor::updateBufferSize(double sampleRate, int samplesP
 
 void AudioPluginAudioProcessor::prepareToPlay(double sampleRate, int samplesPerBlock)
 {
-    updateBufferSize(sampleRate, samplesPerBlock);
-    
     juce::dsp::ProcessSpec spec;
     spec.sampleRate = sampleRate;
-    spec.maximumBlockSize = samplesPerBlock;
-    spec.numChannels = 2;
-    
-    antiAliasFilter.prepare(spec);
+    spec.maximumBlockSize = static_cast<juce::uint32>(samplesPerBlock);
+    spec.numChannels = static_cast<juce::uint32>(getTotalNumOutputChannels());
+
+    effectChain.prepare(spec);
+    updateBufferSize(sampleRate, samplesPerBlock);
+}
+
+void AudioPluginAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer,
+                                           juce::MidiBuffer&)
+{
+    juce::ScopedNoDenormals noDenormals;
+    auto totalNumInputChannels = getTotalNumInputChannels();
+    auto totalNumOutputChannels = getTotalNumOutputChannels();
+
+    for (auto i = totalNumInputChannels; i < totalNumOutputChannels; ++i)
+        buffer.clear(i, 0, buffer.getNumSamples());
+
+    // エフェクトチェーンの処理
+    effectChain.process(buffer);
 }
 
 void AudioPluginAudioProcessor::releaseResources()
 {
-    clearBuffers();
+    effectChain.reset();
 }
 
 bool AudioPluginAudioProcessor::isBusesLayoutSupported(const BusesLayout& layouts) const
@@ -87,113 +100,6 @@ bool AudioPluginAudioProcessor::isBusesLayoutSupported(const BusesLayout& layout
     if (layouts.getMainOutputChannelSet() != layouts.getMainInputChannelSet())
         return false;
     return true;
-}
-
-void AudioPluginAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::MidiBuffer&)
-{
-    const juce::ScopedLock sl(processLock);
-    juce::ScopedNoDenormals noDenormals;
-
-    const int numSamples = buffer.getNumSamples();
-    const int numChannels = buffer.getNumChannels();
-
-    if (delayBufferLength < numSamples * 8 || writePosition >= delayBufferLength)
-    {
-        updateBufferSize(lastSampleRate, numSamples);
-    }
-
-    // 入力をディレイバッファにコピー
-    for (int channel = 0; channel < numChannels; ++channel)
-    {
-        const float* inputData = buffer.getReadPointer(channel);
-        float* delayData = delayBuffer.getWritePointer(channel);
-        
-        for (int i = 0; i < numSamples; ++i)
-        {
-            const int pos = (writePosition + i) % delayBufferLength;
-            delayData[pos] = inputData[i];
-        }
-    }
-
-    // タイムストレッチのレート計算
-    const float timeDiv = getTimeDivValue();
-    float timeStretchRatio;
-    switch (static_cast<int>(timeDiv))
-    {
-        case 0: timeStretchRatio = 1.0f;   break; // 1/1
-        case 1: timeStretchRatio = 2.0f;   break; // 1/2
-        case 2: timeStretchRatio = 4.0f;   break; // 1/4
-        case 3: timeStretchRatio = 8.0f;   break; // 1/8
-        case 4: timeStretchRatio = 16.0f;  break; // 1/16
-        case 5: timeStretchRatio = 32.0f;  break; // 1/32
-        case 6: timeStretchRatio = 64.0f;  break; // 1/64
-        default: timeStretchRatio = 2.0f;
-    }
-
-    // ピッチシフトの計算
-    const float pitchShift = getPitchValue();
-    const float pitchRatio = std::pow(2.0f, pitchShift / 12.0f);
-    timeStretchRatio *= pitchRatio;
-
-    const float mixValue = juce::jlimit(0.0f, 100.0f, getMixValue());
-    const float wetMix = mixValue * 0.01f;
-    const float dryMix = 1.0f - wetMix;
-
-    juce::AudioBuffer<float> tempBuffer(buffer.getNumChannels(), buffer.getNumSamples());
-    tempBuffer.clear();
-
-    for (int channel = 0; channel < numChannels; ++channel)
-    {
-        float* channelData = buffer.getWritePointer(channel);
-        float* tempData = tempBuffer.getWritePointer(channel);
-        const float* delayData = delayBuffer.getReadPointer(channel);
-
-        for (int i = 0; i < numSamples; ++i)
-        {
-            const float originalSample = channelData[i];
-            
-            float readPosition = writePosition + i - numSamples;
-            readPosition /= timeStretchRatio;
-            
-            while (readPosition < 0)
-                readPosition += delayBufferLength;
-
-            const int pos0 = static_cast<int>(readPosition - 1 + delayBufferLength) % delayBufferLength;
-            const int pos1 = static_cast<int>(readPosition + delayBufferLength) % delayBufferLength;
-            const int pos2 = static_cast<int>(readPosition + 1 + delayBufferLength) % delayBufferLength;
-            const int pos3 = static_cast<int>(readPosition + 2 + delayBufferLength) % delayBufferLength;
-
-            float stretchedSample = hermiteInterpolate(
-                delayData[pos0],
-                delayData[pos1],
-                delayData[pos2],
-                delayData[pos3],
-                readPosition - std::floor(readPosition)
-            );
-
-            tempData[i] = stretchedSample;
-        }
-    }
-
-    // アンチエイリアスフィルターを適用
-    juce::dsp::AudioBlock<float> block(tempBuffer);
-    juce::dsp::ProcessContextReplacing<float> context(block);
-    antiAliasFilter.process(context);
-
-    // ドライ/ウェットミックス
-    for (int channel = 0; channel < numChannels; ++channel)
-    {
-        float* channelData = buffer.getWritePointer(channel);
-        const float* tempData = tempBuffer.getReadPointer(channel);
-
-        for (int i = 0; i < numSamples; ++i)
-        {
-            const float originalSample = channelData[i];
-            channelData[i] = originalSample * dryMix + tempData[i] * wetMix;
-        }
-    }
-
-    writePosition = (writePosition + numSamples) % delayBufferLength;
 }
 
 float AudioPluginAudioProcessor::hermiteInterpolate(float y0, float y1, float y2, float y3, float t)
@@ -270,4 +176,30 @@ float AudioPluginAudioProcessor::getPitchValue() const noexcept
 juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
 {
     return new AudioPluginAudioProcessor();
+}
+
+// エフェクト管理関数の実装
+void AudioPluginAudioProcessor::addEffect(std::unique_ptr<Effect> effect)
+{
+    effectChain.addEffect(std::move(effect));
+}
+
+void AudioPluginAudioProcessor::removeEffect(int index)
+{
+    effectChain.removeEffect(index);
+}
+
+void AudioPluginAudioProcessor::moveEffect(int fromIndex, int toIndex)
+{
+    effectChain.moveEffect(fromIndex, toIndex);
+}
+
+Effect* AudioPluginAudioProcessor::getEffect(int index)
+{
+    return effectChain.getEffect(index);
+}
+
+int AudioPluginAudioProcessor::getNumEffects() const
+{
+    return effectChain.getNumEffects();
 }

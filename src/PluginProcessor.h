@@ -2,6 +2,7 @@
 
 #include <juce_audio_processors/juce_audio_processors.h>
 #include <juce_dsp/juce_dsp.h>
+#include "EffectChain.h"
 
 class AudioPluginAudioProcessorEditor;
 
@@ -35,6 +36,14 @@ public:
     void setStateInformation (const void* data, int sizeInBytes) override;
 
     juce::AudioProcessorValueTreeState apvts;
+    EffectChain effectChain;
+
+    // エフェクト管理関数
+    void addEffect(std::unique_ptr<Effect> effect);
+    void removeEffect(int index);
+    void moveEffect(int fromIndex, int toIndex);
+    Effect* getEffect(int index);
+    int getNumEffects() const;
 
 private:
     std::atomic<float>* timeDivParameter = nullptr;
