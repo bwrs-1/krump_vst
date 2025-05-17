@@ -1,0 +1,184 @@
+project_specification:
+  name: "KrumpVST"
+  version: "0.1.0"
+  type: "vst3_plugin"
+  framework: "JUCE"
+
+  modules:
+    juce:
+      - juce_audio_processors
+      - juce_audio_utils
+      - juce_gui_extra
+    third_party:
+      - name: "ImGui"
+        path: "ThirdParty/ImGui"
+        license: "MIT"
+
+  features:
+    dsp_effects:
+      - name: "Reverb"
+        implementation: "JUCE::Reverb"
+        parameters:
+          - id: "room_size"
+            label: "Room Size"
+            type: "float"
+            range: [0.0, 1.0]
+            default: 0.5
+            unit: "normalized"
+            order: 1
+            tags: ["room", "size", "gui"]
+            description: "Controls the perceived room size of the reverb."
+          - id: "damping"
+            label: "Damping"
+            type: "float"
+            range: [0.0, 1.0]
+            default: 0.5
+            unit: "normalized"
+            order: 2
+            tags: ["damping", "gui"]
+            description: "High-frequency absorption."
+          - id: "wet_level"
+            label: "Wet Level"
+            type: "float"
+            range: [0.0, 1.0]
+            default: 0.33
+            unit: "normalized"
+            order: 3
+            tags: ["mix", "gui"]
+            description: "Level of the processed (wet) signal."
+          - id: "dry_level"
+            label: "Dry Level"
+            type: "float"
+            range: [0.0, 1.0]
+            default: 0.4
+            unit: "normalized"
+            order: 4
+            tags: ["mix", "gui"]
+            description: "Level of the unprocessed (dry) signal."
+          - id: "width"
+            label: "Stereo Width"
+            type: "float"
+            range: [0.0, 1.0]
+            default: 1.0
+            unit: "normalized"
+            order: 5
+            tags: ["stereo", "gui"]
+            description: "Spatial width of the reverb output."
+          - id: "freeze_mode"
+            label: "Freeze"
+            type: "bool"
+            default: false
+            order: 6
+            tags: ["freeze", "fx"]
+            description: "Freezes the reverb tail indefinitely."
+
+  ui:
+    framework: "ImGui"
+    development_notes:
+      - "ImGui is used during prototyping phase."
+      - "OpenGL rendering via JUCE::OpenGLContext."
+      - "To be replaced with JUCE-native components for production."
+    design:
+      responsive: true
+      modern: true
+      platform_aware: true
+    controls:
+      - type: "knob"
+        binds_to: "room_size"
+        label: "Room Size"
+      - type: "toggle"
+        binds_to: "freeze_mode"
+        label: "Freeze"
+
+  project_structure:
+    root: "."
+    directories:
+      - Source/
+        - DSP/
+        - GUI/
+        - Core/
+      - Tests/
+      - Builds/
+      - ThirdParty/
+        - ImGui/
+      - Resources/
+    key_files:
+      - CMakeLists.txt
+      - README.md
+      - .clang-format
+      - PluginDefines.h
+      - Source/Core/log_error.hpp
+
+  build:
+    system: "CMake"
+    configurations:
+      - name: Debug
+        flags: ["-DDEBUG=1"]
+      - name: Release
+        flags: ["-O3"]
+    formats:
+      - VST3
+      - Standalone
+    targets:
+      - Windows (Visual Studio 2022)
+      - macOS (Xcode)
+    requirements:
+      - cross_platform
+      - fast_rebuilds
+      - consistent_artifacts
+
+  testing:
+    strategy:
+      - "Use Catch2 for DSP-level unit tests."
+      - "Use JUCE UnitTest classes for integration tests."
+      - "Run Pluginval to ensure plugin compliance."
+    frameworks:
+      - Catch2
+      - JUCE::UnitTest
+    location: "Tests/"
+    automation:
+      - github_actions.yml
+
+  scripts:
+    setup:
+      - "./scripts/setup_env.sh"
+    build_debug:
+      - "cmake -B build -DCMAKE_BUILD_TYPE=Debug"
+      - "cmake --build build"
+    build_release:
+      - "cmake -B build -DCMAKE_BUILD_TYPE=Release"
+      - "cmake --build build"
+    test_all:
+      - "cd build && ctest --output-on-failure"
+    validate:
+      - "./tools/pluginval --strict ./build/KrumpVST.vst3"
+    error_handling:
+      language: "C++"
+      strategy: "log_on_exception"
+      log_file: "error.log"
+      details:
+        - "try-catch ブロックで std::exception を捕捉し、内容を error.log に出力"
+        - "ログには: メッセージ（what()）、発生時刻、ファイル名、関数名、行番号 を記録"
+        - "マクロ LOG_ERROR(e) により一貫したログフォーマットで記録"
+        - "CursorのAIエージェントが error.log を分析対象として使用できる"
+    ai_directives:
+      comment_injection:
+        enabled: true
+        target_extensions: [".cpp", ".h", ".hpp", ".c", ".cc", "CMakeLists.txt"]
+        position: "top_of_file"
+        content: |
+          // [IMPORTANT]
+          // AI must refer to the spec at: src/specs/project_spec.yaml
+          // before modifying or generating code in this file.
+          // This file adheres to the structure and behavior defined in the YAML spec.
+
+  cleanup:
+    checklist:
+      - "Remove unused DSP files from Source/DSP"
+      - "Delete deprecated GUI components"
+      - "Disable ImGui in production builds"
+      - "Run clang-format on entire Source/"
+      - "Ensure JUCE modules are pruned to used only"
+      - "Validate build with Pluginval and VST3 host"
+
+

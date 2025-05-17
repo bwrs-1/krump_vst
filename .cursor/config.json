@@ -1,0 +1,8 @@
+{
+    "metadata": {
+      "specFile": "src/specs/project_spec.yaml",
+      "useSpecAsPrimaryContext": true,
+      "description": "This project strictly follows the specification defined in `src/specs/project_spec.yaml`. All AI modifications must refer to this file."
+    }
+  }
+  
