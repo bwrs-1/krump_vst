@@ -66,9 +66,9 @@ KrumpVSTAudioProcessorEditor::KrumpVSTAudioProcessorEditor(KrumpVSTAudioProcesso
     : AudioProcessorEditor(&p), audioProcessor(p)
 {
     setLookAndFeel(&customLnf);
-    setSize(800, 600);
+    setSize(800, 400);
     setResizable(true, true);
-    setResizeLimits(400, 300, 1600, 1200);
+    setResizeLimits(400, 200, 1600, 800);
 
     // フォントファイルの読み込み
     juce::File fontFile("/Users/bwrs1/Documents/krump_vst/Bon_en_ji-Regular .otf");
@@ -115,35 +115,66 @@ KrumpVSTAudioProcessorEditor::KrumpVSTAudioProcessorEditor(KrumpVSTAudioProcesso
     dryAttach       = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(apvts, "Dry",       drySlider);
     widthAttach     = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(apvts, "Width",     widthSlider);
     freezeAttach    = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(apvts, "Freeze",    freezeSlider);
+
+    // --- Visualizer更新タイマー開始 ---
+    startTimerHz(60);
 }
 
 KrumpVSTAudioProcessorEditor::~KrumpVSTAudioProcessorEditor()
 {
 }
 
+void KrumpVSTAudioProcessorEditor::timerCallback() {
+    repaint();
+}
+
 void KrumpVSTAudioProcessorEditor::paint(juce::Graphics& g)
 {
-    g.fillAll(juce::Colour(0xff181818)); // ダークグレー背景
+    g.fillAll(juce::Colour(0xff181818)); // 背景
+    // タイトル
     g.setColour(juce::Colours::white);
-    g.setFont(customFont);
-    g.drawFittedText("BUCK REVERB", getLocalBounds().removeFromTop(60), juce::Justification::centred, 1);
+    g.setFont(juce::Font(32.0f, juce::Font::bold));
+    g.drawFittedText("BUCK REVERB", 0, 10, getWidth(), 40, juce::Justification::centred, 1);
+    // Visualizer
+    const int visMargin = 30;
+    const int visW = getWidth() - visMargin * 2;
+    const int visH = 80;
+    const int visX = visMargin;
+    const int visY = 60;
+    auto* bufL = audioProcessor.getVisualizerBufferL();
+    auto* bufR = audioProcessor.getVisualizerBufferR();
+    int bufSize = audioProcessor.getVisualizerBufferSize();
+    if (bufL && bufR) {
+        juce::Path pathL, pathR;
+        float xStep = (float)visW / (float)bufSize;
+        pathL.startNewSubPath(visX, visY + visH/2 - bufL[0]*visH/2);
+        pathR.startNewSubPath(visX, visY + visH/2 - bufR[0]*visH/2);
+        for (int i = 1; i < bufSize; ++i) {
+            float x = visX + i * xStep;
+            pathL.lineTo(x, visY + visH/2 - bufL[i]*visH/2);
+            pathR.lineTo(x, visY + visH/2 - bufR[i]*visH/2);
+        }
+        g.setColour(juce::Colours::red.withAlpha(0.7f));
+        g.strokePath(pathL, juce::PathStrokeType(2.0f));
+        g.setColour(juce::Colours::blue.withAlpha(0.7f));
+        g.strokePath(pathR, juce::PathStrokeType(2.0f));
+    }
 }
 
 void KrumpVSTAudioProcessorEditor::resized()
 {
-    auto area = getLocalBounds().reduced(40).removeFromTop(getHeight() - 80);
-    auto sliderW = area.getWidth() / 6;
-    auto sliderH = area.getHeight() - 30;
-    roomSizeSlider.setBounds(area.removeFromLeft(sliderW).reduced(10, 20));
-    roomSizeLabel.setBounds(roomSizeSlider.getX(), roomSizeSlider.getBottom(), sliderW, 20);
-    dampingSlider.setBounds(area.removeFromLeft(sliderW).reduced(10, 20));
-    dampingLabel.setBounds(dampingSlider.getX(), dampingSlider.getBottom(), sliderW, 20);
-    wetSlider.setBounds(area.removeFromLeft(sliderW).reduced(10, 20));
-    wetLabel.setBounds(wetSlider.getX(), wetSlider.getBottom(), sliderW, 20);
-    drySlider.setBounds(area.removeFromLeft(sliderW).reduced(10, 20));
-    dryLabel.setBounds(drySlider.getX(), drySlider.getBottom(), sliderW, 20);
-    widthSlider.setBounds(area.removeFromLeft(sliderW).reduced(10, 20));
-    widthLabel.setBounds(widthSlider.getX(), widthSlider.getBottom(), sliderW, 20);
-    freezeSlider.setBounds(area.removeFromLeft(sliderW).reduced(10, 20));
-    freezeLabel.setBounds(freezeSlider.getX(), freezeSlider.getBottom(), sliderW, 20);
+    // Visualizerの下にスライダーを横一列で大きく配置
+    const int margin = 30;
+    const int visH = 80;
+    const int sliderAreaY = 60 + visH + 20;
+    const int sliderAreaH = getHeight() - sliderAreaY - 30;
+    const int sliderW = (getWidth() - margin * 2) / 6;
+    const int sliderH = sliderAreaH - 30;
+    juce::Rectangle<int> area(margin, sliderAreaY, getWidth() - margin * 2, sliderAreaH);
+    juce::Slider* sliders[] = { &roomSizeSlider, &dampingSlider, &wetSlider, &drySlider, &widthSlider, &freezeSlider };
+    juce::Label* labels[] = { &roomSizeLabel, &dampingLabel, &wetLabel, &dryLabel, &widthLabel, &freezeLabel };
+    for (int i = 0; i < 6; ++i) {
+        sliders[i]->setBounds(area.getX() + i * sliderW + 10, area.getY(), sliderW - 20, sliderH);
+        labels[i]->setBounds(area.getX() + i * sliderW + 10, area.getBottom() - 25, sliderW - 20, 20);
+    }
 }

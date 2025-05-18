@@ -12,7 +12,8 @@ public:
     void drawLabel(juce::Graphics&, juce::Label&) override;
 };
 
-class KrumpVSTAudioProcessorEditor : public juce::AudioProcessorEditor
+class KrumpVSTAudioProcessorEditor : public juce::AudioProcessorEditor,
+                                    private juce::Timer
 {
 public:
     KrumpVSTAudioProcessorEditor(KrumpVSTAudioProcessor&);
@@ -29,5 +30,7 @@ private:
     juce::Slider roomSizeSlider, dampingSlider, wetSlider, drySlider, widthSlider, freezeSlider;
     juce::Label roomSizeLabel, dampingLabel, wetLabel, dryLabel, widthLabel, freezeLabel;
     std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> roomSizeAttach, dampingAttach, wetAttach, dryAttach, widthAttach, freezeAttach;
+    // --- Visualizer用 ---
+    void timerCallback() override;
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(KrumpVSTAudioProcessorEditor)
 };

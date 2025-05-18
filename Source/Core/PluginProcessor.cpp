@@ -33,6 +33,14 @@ void KrumpVSTAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce
     reverbEffect.setWidth(apvts.getRawParameterValue("Width")->load());
     reverbEffect.setFreezeMode(apvts.getRawParameterValue("Freeze")->load() > 0.5f);
     reverbEffect.processBlock(buffer);
+    const int numSamples = buffer.getNumSamples();
+    const float* readL = buffer.getReadPointer(0);
+    const float* readR = buffer.getNumChannels() > 1 ? buffer.getReadPointer(1) : nullptr;
+    for (int i = 0; i < numSamples; ++i) {
+        visualizerBufferL[visualizerWritePos] = readL[i];
+        visualizerBufferR[visualizerWritePos] = readR ? readR[i] : 0.0f;
+        visualizerWritePos = (visualizerWritePos + 1) % visualizerBufferSize;
+    }
     midiMessages.clear();
 }
 

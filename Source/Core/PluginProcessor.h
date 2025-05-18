@@ -50,7 +50,17 @@ public:
     juce::AudioProcessorValueTreeState apvts;
     static juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout();
 
+    // 波形バッファ参照用getter
+    const float* getVisualizerBufferL() const { return visualizerBufferL; }
+    const float* getVisualizerBufferR() const { return visualizerBufferR; }
+    int getVisualizerBufferSize() const { return visualizerBufferSize; }
+
 private:
     ReverbEffect reverbEffect;
+    // 波形可視化用バッファ
+    static constexpr int visualizerBufferSize = 1024;
+    float visualizerBufferL[visualizerBufferSize] = {0};
+    float visualizerBufferR[visualizerBufferSize] = {0};
+    int visualizerWritePos = 0;
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(KrumpVSTAudioProcessor)
 };

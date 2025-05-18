@@ -73,15 +73,23 @@ project_specification:
             description: "Freezes the reverb tail indefinitely."
 
   ui:
-    framework: "ImGui"
-    development_notes:
-      - "ImGui is used during prototyping phase."
-      - "OpenGL rendering via JUCE::OpenGLContext."
-      - "To be replaced with JUCE-native components for production."
+    framework: "JUCE-native"
     design:
       responsive: true
       modern: true
       platform_aware: true
+      layout:
+        - title: "上部中央にシンプルなタイトル（BUCK REVERB）を表示"
+        - visualizer: "タイトル下にL/R両チャンネルの波形Visualizerを横長で表示（赤=左, 青=右, 半透明）"
+        - controls: "Visualizer下に6つのリバーブパラメータスライダーを横一列に大きく配置し、各スライダー下にラベルを表示"
+      notes:
+        - "ImGuiは現在使用していません。すべてJUCEネイティブGUIで実装。"
+        - "フッターボタン等の余計なUIは排除し、シンプルかつモダンなデザイン。"
+        - "Visualizerは毎フレーム更新、スライダーはAudioProcessorValueTreeStateでバインド。"
+    development_notes:
+      - "ImGui is used during prototyping phase."
+      - "OpenGL rendering via JUCE::OpenGLContext."
+      - "To be replaced with JUCE-native components for production."
     controls:
       - type: "knob"
         binds_to: "room_size"
